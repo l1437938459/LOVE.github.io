@@ -126,7 +126,6 @@ h1{font-size:clamp(38px,5.4vw,72px);line-height:1.14}
   border:1px solid var(--ink);border-radius:2px;padding:4px 10px 3px;
 }
 .hero-kicker .box-sub{font-size:12.5px;color:var(--ink-3);letter-spacing:.04em}
-.hero h1 em{font-style:normal;display:block}
 .hero-cta{display:flex;align-items:center;gap:18px;flex-wrap:wrap;margin-top:30px}
 .hero-cta .hint{font-size:13px;color:var(--ink-3)}
 
@@ -491,6 +490,23 @@ h1{font-size:clamp(38px,5.4vw,72px);line-height:1.14}
 .res-actions .spacer{flex:1}
 .res-actions .btn{min-width:112px}
 
+/* 分享 */
+.share-row{
+  display:flex;align-items:flex-start;justify-content:space-between;gap:20px;flex-wrap:wrap;
+  margin-top:20px;padding-top:18px;border-top:1px solid var(--line);
+}
+.share-copy{min-width:0;flex:1 1 320px}
+.share-copy .sh-t{font-family:var(--serif);font-size:17px;letter-spacing:.03em}
+.share-copy .sh-d{font-size:13px;color:var(--ink-3);line-height:1.75;margin-top:6px;max-width:36em}
+.sh-actions{display:flex;gap:10px;flex-wrap:wrap}
+.sh-actions .btn{padding:11px 18px;font-size:14px}
+.share-preview{
+  margin-top:12px;border:1px dashed var(--line);background:var(--paper-card);
+  padding:14px 16px;font-size:13px;line-height:1.85;color:var(--ink-2);
+  white-space:pre-line;border-radius:2px;
+}
+.share-preview .sp-t{font-size:11.5px;letter-spacing:.1em;color:var(--ink-3);margin-bottom:8px;white-space:normal}
+
 /* 两步确认 */
 #confirmHost{margin-top:12px}
 .confirm-row{
@@ -501,6 +517,15 @@ h1{font-size:clamp(38px,5.4vw,72px);line-height:1.14}
 .confirm-row .link{
   border:0;background:transparent;text-decoration:underline;cursor:pointer;font-size:13px;color:var(--ink-3);padding:0;
 }
+
+/* toast */
+.toast{
+  position:fixed;left:50%;bottom:26px;transform:translate(-50%,10px);
+  background:var(--deep);color:var(--white);padding:11px 20px;border-radius:2px;
+  font-size:13.5px;line-height:1.6;max-width:calc(100vw - 40px);text-align:center;
+  opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;z-index:60;
+}
+.toast.show{opacity:1;transform:translate(-50%,0)}
 
 /* ---------- 页脚 ---------- */
 footer{
@@ -625,7 +650,7 @@ footer{
         <div class="quiz-main">
           <div class="q-index"><span class="num" id="qNo">01</span><span>情境判断</span></div>
           <h2 class="q-text" id="qText">—</h2>
-          <p class="q-hint">按你真实的第一反应选，不用挑「应该更好」的那个。</p>
+          <p class="q-hint">按你真实的第一反应选，不用挑「应该更好」的那个。选完会自动进入下一题。</p>
 
           <div class="opts" id="opts" role="radiogroup" aria-labelledby="qText"></div>
 
@@ -700,6 +725,18 @@ footer{
         <button class="btn ghost" id="btnHome">回到首页</button>
       </div>
       <div id="confirmHost"></div>
+
+      <div class="share-row">
+        <div class="share-copy">
+          <div class="sh-t">把结果带到微信</div>
+          <div class="sh-d">手机点「分享」会调起系统分享面板，里面可以直接选微信或朋友圈；电脑上会把这句文案复制到剪贴板。微信不允许网页一键直接发朋友圈，所以走的是系统分享或复制粘贴。</div>
+        </div>
+        <div class="sh-actions">
+          <button class="btn solid" id="btnShare">分享出去</button>
+          <button class="btn ghost" id="btnCopy">复制文案</button>
+        </div>
+      </div>
+      <div class="share-preview" id="sharePreview"></div>
     </div>
   </section>
 
@@ -711,6 +748,8 @@ footer{
     <div class="f-r">恐爱测评 · 单页版</div>
   </div>
 </footer>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <noscript><div class="wrap" style="padding:24px 0;color:#6E3B2E">这个页面需要开启 JavaScript 才能答题和计算结果。</div></noscript>
 
@@ -956,18 +995,32 @@ var state = {
   result: null
 };
 
+var AUTO_NEXT_MS = 320;
+var autoTimer = null;
+var toastTimer = null;
+
 var $ = function(id){ return document.getElementById(id); };
+
+function cancelAuto(){
+  if(autoTimer){ clearTimeout(autoTimer); autoTimer = null; }
+}
+
+function showToast(msg){
+  var t = $("toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  if(toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(function(){ t.classList.remove("show"); }, 2600);
+}
 
 /* ============================================================
    4. 视图渲染（首页静态块）
    ============================================================ */
 
 function renderHomeStatics(){
-  // 顶部品牌标记
   var mark = document.querySelector(".brand .mark");
   if(mark){ mark.innerHTML = ANIMALS.hedgehog; mark.querySelector("svg").setAttribute("viewBox","0 0 120 92"); }
 
-  // hero 观察框
   var grid = $("animalGrid");
   var order = [
     { k:"hedgehog", nm:"刺猬" },
@@ -980,7 +1033,6 @@ function renderHomeStatics(){
     return '<div class="animal-cell"><div class="animal">'+ANIMALS[o.k]+'</div><div class="nm">'+o.nm+'</div></div>';
   }).join("");
 
-  // 图鉴
   var keys = ["golden","hedgehog","snail","rabbit","fox"];
   $("typeIndex").innerHTML = keys.map(function(k){
     var t = TYPES[k];
@@ -1004,6 +1056,7 @@ function answeredCount(){
 }
 
 function renderQuestion(){
+  cancelAuto();
   var q = QUESTIONS[state.idx];
   $("qNo").textContent = String(state.idx+1).padStart(2,"0");
   $("qNow").textContent = "第 " + (state.idx+1) + " 题";
@@ -1019,18 +1072,15 @@ function renderQuestion(){
     '</button>';
   }).join("");
 
-  // 按钮状态
   $("btnPrev").disabled = (state.idx === 0);
   $("btnNext").textContent = (state.idx === QUESTIONS.length-1) ? "查看结果" : "下一题";
 
-  // 进度
   var done = answeredCount();
   $("answeredCount").textContent = done;
   var pct = Math.round(done / QUESTIONS.length * 100);
   $("progPct").textContent = pct;
   $("progFill").style.width = pct + "%";
-  var bar = $("progBar");
-  bar.setAttribute("aria-valuenow", String(done));
+  $("progBar").setAttribute("aria-valuenow", String(done));
 
   renderNav();
   hideAlert();
@@ -1064,7 +1114,18 @@ function hideAlert(){
   $("quizAlert").hidden = true;
 }
 
+function syncProgress(){
+  var done = answeredCount();
+  $("answeredCount").textContent = done;
+  var pct = Math.round(done / QUESTIONS.length * 100);
+  $("progPct").textContent = pct;
+  $("progFill").style.width = pct + "%";
+  $("progBar").setAttribute("aria-valuenow", String(done));
+  renderNav();
+}
+
 function selectOption(v){
+  cancelAuto();
   state.answers[state.idx] = v;
   var opts = $("opts").querySelectorAll(".opt");
   for(var i=0;i<opts.length;i++){
@@ -1076,20 +1137,25 @@ function selectOption(v){
       bars[j].classList.toggle("on-bright", on && j < v);
     }
   }
-  // 更新进度与导航
-  var done = answeredCount();
-  $("answeredCount").textContent = done;
-  var pct = Math.round(done / QUESTIONS.length * 100);
-  $("progPct").textContent = pct;
-  $("progFill").style.width = pct + "%";
-  $("progBar").setAttribute("aria-valuenow", String(done));
-  renderNav();
+  syncProgress();
   hideAlert();
+
+  // 答完自动进入下一题（最后一题停在原地，等人点「查看结果」）
+  var from = state.idx;
+  if(from < QUESTIONS.length - 1){
+    autoTimer = setTimeout(function(){
+      autoTimer = null;
+      if(state.idx === from && state.answers[from] !== null && state.idx < QUESTIONS.length - 1){
+        state.idx = from + 1;
+        renderQuestion();
+      }
+    }, AUTO_NEXT_MS);
+  }
 }
 
 function nextQuestion(){
+  cancelAuto();
   if(state.idx === QUESTIONS.length - 1){
-    // 最后一题直接走整卷校验：当前题未答会提示，其他题未完会跳到第一道缺口
     submitAll();
     return;
   }
@@ -1102,12 +1168,14 @@ function nextQuestion(){
 }
 
 function prevQuestion(){
+  cancelAuto();
   if(state.idx === 0) return;
   state.idx -= 1;
   renderQuestion();
 }
 
 function submitAll(){
+  cancelAuto();
   var firstMissing = -1;
   for(var i=0;i<state.answers.length;i++){
     if(state.answers[i] === null){ firstMissing = i; break; }
@@ -1140,17 +1208,15 @@ function compute(){
   }
   var total = dims.avoid + dims.commit + dims.trust + dims.self;
 
-  // 主导维度（并列时按 DIM_ORDER 顺序）
-  var best = DIM_ORDER[0], second = null;
+  var best = DIM_ORDER[0];
   for(var k=0;k<DIM_ORDER.length;k++){
     var key = DIM_ORDER[k];
     if(dims[key] > dims[best]) best = key;
   }
   var bestScore = dims[best];
-  // 次高维度
-  var rest = DIM_ORDER.filter(function(k){ return k !== best; });
+  var rest = DIM_ORDER.filter(function(k2){ return k2 !== best; });
   rest.sort(function(a,b){ return dims[b] - dims[a]; });
-  second = rest[0];
+  var second = rest[0];
 
   var temp = total <= 30 ? "low" : (total <= 47 ? "mid" : "high");
   var typeKey = (total <= 30) ? "golden" : DIM_TO_TYPE[best];
@@ -1177,19 +1243,29 @@ var TEMP_TEXT = {
   high: { word:"高", note:"你的恐爱程度偏高。靠近这件事本身就会让你紧张，你的保护机制启动得比别人早、也比别人久。" }
 };
 
+function buildShareText(){
+  var r = state.result;
+  if(!r) return "";
+  var t = TYPES[r.typeKey];
+  return [
+    "【恐爱测评】我是" + t.name + " — " + t.sub,
+    "恐爱温度：" + TEMP_TEXT[r.temp].word + "（总分 " + r.total + "/80）",
+    DIM_ORDER.map(function(k){ return DIMS[k].name + " " + r.dims[k]; }).join(" / "),
+    t.line
+  ].join("\n");
+}
+
 function renderResult(){
   if(!state.result) return;
   var r = state.result;
   var t = TYPES[r.typeKey];
 
-  // 头部
   $("resName").textContent = t.name;
   $("resSub").textContent = t.sub;
   $("resLine").textContent = t.line;
   $("resKicker").textContent = "你的结果 · " + (r.temp === "low" ? "低恐爱" : (r.temp === "mid" ? "中恐爱" : "高恐爱"));
   $("resAnimal").innerHTML = ANIMALS[TYPE_ANIMAL[r.typeKey]];
 
-  // 温度
   var tw = TEMP_TEXT[r.temp];
   $("tempWord").textContent = tw.word;
   $("tempScore").textContent = "总分 " + r.total + " / 80";
@@ -1197,7 +1273,6 @@ function renderResult(){
   var pct = (r.total - 16) / 64 * 100;
   $("tempMark").style.left = pct.toFixed(2) + "%";
 
-  // 维度
   var dimsHtml = DIM_ORDER.map(function(k){
     var s = r.dims[k];
     var lv = levelOf(s);
@@ -1215,7 +1290,6 @@ function renderResult(){
   }).join("");
   $("dims").innerHTML = dimsHtml;
 
-  // 补充说明（同时带别的底色 / 低总分但单维偏高）
   var extra = "";
   if(r.typeKey !== "golden" && (r.bestScore - r.secondScore) <= 2 && levelOf(r.secondScore) !== "low"){
     extra += '<p class="tint-note">同时，你的「'+DIMS[r.second].name+'」也有 '+r.secondScore+' 分，整体上带一点'+TYPES[DIM_TO_TYPE[r.second]].name+'的底色。两种模式会一起出现，视对方和情境切换。</p>';
@@ -1224,7 +1298,6 @@ function renderResult(){
     extra += '<p class="tint-note">整体分数不高，但「'+DIMS[r.best].name+'」单维到了 '+r.bestScore+' 分。平时你可能没什么感觉，一旦遇到特定情境，那套防备会明显冒出来。</p>';
   }
 
-  // 正文块
   var blocks = "";
   if(extra) blocks += '<div class="res-block" style="border-top:0;padding-top:0">'+extra+'</div>';
 
@@ -1257,7 +1330,9 @@ function renderResult(){
 
   $("resBlocks").innerHTML = blocks;
 
-  // 动画进入
+  // 分享文案预览
+  $("sharePreview").innerHTML = '<div class="sp-t">分享文案</div>' + buildShareText();
+
   requestAnimationFrame(function(){
     var fills = $("dims").querySelectorAll(".fill");
     for(var i=0;i<fills.length;i++){
@@ -1277,10 +1352,10 @@ function computeAndShow(){
    ============================================================ */
 
 function showView(name){
+  cancelAuto();
   var views = { home:$("view-home"), quiz:$("view-quiz"), result:$("view-result") };
   for(var k in views){ views[k].hidden = (k !== name); }
   if(name === "quiz"){ renderQuestion(); }
-  if(name === "result"){ /* 结果内容由 renderResult 负责 */ }
   window.scrollTo({ top:0, behavior:"auto" });
   document.body.dataset.view = name;
 }
@@ -1302,12 +1377,9 @@ $("btnPrev").addEventListener("click", prevQuestion);
 $("navGrid").addEventListener("click", function(e){
   var cell = e.target.closest(".nav-cell");
   if(!cell) return;
+  cancelAuto();
   state.idx = Number(cell.dataset.i);
   renderQuestion();
-});
-
-$("alertJump").addEventListener("click", function(){
-  // 由 showAlert 里动态覆盖，这里兜底
 });
 
 $("btnEdit").addEventListener("click", function(){
@@ -1321,6 +1393,69 @@ $("btnHome").addEventListener("click", function(){
 $("brandLink").addEventListener("click", function(e){
   e.preventDefault();
   showView("home");
+});
+
+/* ---- 分享 / 复制 ---- */
+function fallbackCopy(text){
+  try{
+    var ta = document.createElement("textarea");
+    ta.value = text;
+    ta.setAttribute("readonly","");
+    ta.style.position = "fixed";
+    ta.style.top = "-1000px";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    var ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    return ok;
+  }catch(err){
+    return false;
+  }
+}
+
+function copyText(text){
+  return new Promise(function(resolve){
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(text).then(function(){ resolve(true); }, function(){ resolve(fallbackCopy(text)); });
+    }else{
+      resolve(fallbackCopy(text));
+    }
+  });
+}
+
+$("btnCopy").addEventListener("click", function(){
+  var text = buildShareText();
+  if(!text) return;
+  copyText(text).then(function(ok){
+    showToast(ok ? "文案已复制，粘贴到微信或朋友圈就行" : "复制没成功，可以长按上面的文案手动复制");
+  });
+});
+
+function isMobileDevice(){
+  var ua = navigator.userAgent || "";
+  if(/Android|iPhone|iPad|iPod|Mobile|HarmonyOS/i.test(ua)) return true;
+  return (navigator.maxTouchPoints > 1) && window.innerWidth < 900;
+}
+
+$("btnShare").addEventListener("click", function(){
+  var text = buildShareText();
+  if(!text) return;
+  if(navigator.share && isMobileDevice()){
+    navigator.share({ title:"恐爱测评 · 我的结果", text: text }).then(function(){
+      showToast("已打开分享面板");
+    }, function(err){
+      if(err && err.name === "AbortError") return;
+      copyText(text).then(function(ok){
+        showToast(ok ? "这台设备不支持直接分享，文案已复制" : "这台设备不支持直接分享，可以手动复制文案");
+      });
+    });
+  }else{
+    copyText(text).then(function(ok){
+      showToast(ok ? "已复制文案，打开微信粘贴到朋友圈就行" : "请长按上面的文案手动复制");
+    });
+  }
 });
 
 $("btnRetest").addEventListener("click", function(){
